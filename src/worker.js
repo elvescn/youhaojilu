@@ -218,10 +218,16 @@ export default {
         return json({ ok: true, probed_at: nowISO(), brief, results });
       }
 
-      // 统一 Bearer 鉴权
-      const auth = request.headers.get("authorization") || "";
-      const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-      if (!safeEqual(token, env.API_TOKEN || "")) return err("未授权，请先登录", 401);
+      // 公开只读接口（未登录可浏览）：概览/统计/加油列表/费用列表
+      const PUBLIC_READ = request.method === "GET" && (
+        path === "/api/bootstrap" || path === "/api/stats" ||
+        path === "/api/fuel" || path === "/api/expense"
+      );
+      if (!PUBLIC_READ) {
+        const auth = request.headers.get("authorization") || "";
+        const bearer = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+        if (!safeEqual(bearer, env.API_TOKEN || "")) return err("未授权，请先登录", 401);
+      }
 
       const DB = env.DB;
       const method = request.method;
