@@ -13,6 +13,9 @@
 }
 
 * { box-sizing: border-box; }
+/* 关键：让 hidden 属性永远生效——否则 .modal-mask/.login-wrap/.form-grid 等带
+   display 规则的元素会压过浏览器默认的 [hidden]{display:none}，导致弹窗常驻 */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;
