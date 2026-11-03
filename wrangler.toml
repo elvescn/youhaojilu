@@ -19,7 +19,7 @@ crons = ["0 14 * * *"]
 
 [vars]
 # 备份收件邮箱（任意邮箱均可：163 / QQ / 自建 cloud-mail 域名邮箱）
-BACKUP_TO = ""
+BACKUP_TO = "admin@19830920.xyz"
 # 可选：发件人地址，须为 Resend 已验证域名下的地址（默认 youhao@<BACKUP_TO 的域名>）
 MAIL_FROM = ""
 # 数据变更后即时备份邮件的限流间隔（秒），防止连续录入刷信
