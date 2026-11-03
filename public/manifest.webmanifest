@@ -1,0 +1,12 @@
+{
+  "name": "油耗账本",
+  "short_name": "油耗账本",
+  "description": "自建油耗记录：在线录入、自动邮件备份、导入导出",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#185FA5",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }
+  ]
+}

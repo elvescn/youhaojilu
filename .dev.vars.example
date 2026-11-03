@@ -1,0 +1,9 @@
+# 本地开发用密钥示例。复制为 .dev.vars 后填入真实值（.dev.vars 已在 .gitignore，不会提交）
+# API_TOKEN：前端登录口令，自定义一串长随机字符串
+API_TOKEN=dev-token-change-me
+# SMTP_USER：163 邮箱完整地址
+SMTP_USER=yourname@163.com
+# SMTP_PASS：163 邮箱「设置 → POP3/SMTP/IMAP」里开启 SMTP 后获得的授权码（不是登录密码）
+SMTP_PASS=your-163-authorization-code
+# BACKUP_TO：备份邮件收件地址，留空则发往 SMTP_USER 本人
+BACKUP_TO=yourname@163.com

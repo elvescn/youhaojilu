@@ -1,0 +1,11 @@
+# 依赖与构建产物
+node_modules/
+.wrangler/
+dist/
+
+# 本地开发密钥（不要提交）
+.dev.vars
+
+# 系统杂项
+.DS_Store
+Thumbs.db

@@ -1,0 +1,18 @@
+{
+  "name": "youhao",
+  "version": "1.0.0",
+  "private": true,
+  "description": "自建油耗账本：Cloudflare Workers + D1，在线录入、163 邮箱自动备份、导入导出",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:local": "wrangler d1 migrations apply youhao --local",
+    "db:remote": "wrangler d1 migrations apply youhao --remote",
+    "db:seed:local": "wrangler d1 execute youhao --local --file=seed/seed.sql",
+    "db:seed:remote": "wrangler d1 execute youhao --remote --file=seed/seed.sql",
+    "xls2seed": "python tools/xls2json.py ../小熊油耗-764057-2026-10-23.xls"
+  },
+  "devDependencies": {
+    "wrangler": "^4.0.0"
+  }
+}

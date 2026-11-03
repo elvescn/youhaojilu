@@ -1,0 +1,28 @@
+name = "youhao"
+main = "src/worker.js"
+compatibility_date = "2025-03-01"
+
+# 静态资源（前端 SPA）：命中文件直接返回，未命中（如 /api/*）进入 Worker
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "youhao"
+# 部署前执行 wrangler d1 create youhao，把返回的 database_id 填到这里
+database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+migrations_dir = "migrations"
+
+# 每日 22:00（北京时间）发送全量备份邮件；UTC 14:00 = 北京时间 22:00
+[triggers]
+crons = ["0 14 * * *"]
+
+[vars]
+SMTP_HOST = "smtp.163.com"
+SMTP_PORT = "465"
+SMTP_SECURE = "on"
+# 备份收件邮箱；留空则默认发往 SMTP_USER 本人
+BACKUP_TO = ""
+# 数据变更后即时备份邮件的限流间隔（秒），防止连续录入刷信
+CHANGE_EMAIL_INTERVAL = "300"
