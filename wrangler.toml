@@ -10,8 +10,7 @@ binding = "ASSETS"
 [[d1_databases]]
 binding = "DB"
 database_name = "youhao"
-# 部署前执行 wrangler d1 create youhao，把返回的 database_id 填到这里
-database_id = "REPLACE_WITH_YOUR_DATABASE_ID"
+database_id = "959a7f28-6cc9-43c6-ab9e-f0c4f9fcf230"
 migrations_dir = "migrations"
 
 # 每日 22:00（北京时间）发送全量备份邮件；UTC 14:00 = 北京时间 22:00
