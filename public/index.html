@@ -41,7 +41,6 @@
   <nav class="tabs">
     <button class="tab active" data-tab="dash">仪表盘</button>
     <button class="tab" data-tab="fuel">加油记录</button>
-    <button class="tab" data-tab="expense">费用记录</button>
     <button class="tab" data-tab="data">数据</button>
   </nav>
 
@@ -54,7 +53,7 @@
         <canvas id="chart-consumption" height="180"></canvas>
       </div>
       <div class="panel">
-        <h3>月度花费（元）</h3>
+        <h3>月度油费（元）</h3>
         <canvas id="chart-cost" height="180"></canvas>
       </div>
     </section>
@@ -84,29 +83,7 @@
       </div>
     </section>
 
-    <!-- 费用记录 -->
-    <section id="tab-expense" class="tabpane">
-      <div class="toolbar">
-        <select id="exp-year"></select>
-        <select id="exp-category">
-          <option value="">全部类型</option>
-        </select>
-        <button id="exp-add" class="btn primary">＋ 记一笔</button>
-      </div>
-      <div class="table-wrap">
-        <table class="grid" id="exp-table">
-          <thead><tr>
-            <th>日期</th><th>类型</th><th>金额</th><th>备注</th><th></th>
-          </tr></thead>
-          <tbody></tbody>
-        </table>
-      </div>
-      <div class="pager">
-        <button class="btn ghost" id="exp-prev">上一页</button>
-        <span id="exp-pageinfo" class="muted"></span>
-        <button class="btn ghost" id="exp-next">下一页</button>
-      </div>
-    </section>
+    <!-- 费用记录 tab 已移除，仅保留加油记录 -->
 
     <!-- 数据 -->
     <section id="tab-data" class="tabpane">
@@ -115,7 +92,6 @@
         <p class="muted">CSV 表头与小熊油耗导出一致，可直接用 Excel 打开；JSON 为全量快照，可用于整库迁移。</p>
         <div class="btn-row">
           <a class="btn" href="/api/export?format=csv&amp;type=fuel" download>导出油耗 CSV</a>
-          <a class="btn" href="/api/export?format=csv&amp;type=expense" download>导出费用 CSV</a>
           <a class="btn" href="/api/export?format=json" download>导出全量 JSON</a>
         </div>
       </div>
@@ -142,6 +118,9 @@
       </div>
     </section>
   </main>
+
+  <!-- 悬浮记账按钮（手机端右下角） -->
+  <button id="fab-add" class="fab" title="记一笔" aria-label="新增加油记录">＋</button>
 </div>
 
 <!-- 编辑弹窗 -->
@@ -163,10 +142,6 @@
         <label>机显金额 元<input type="number" id="f-amount-display" step="0.01" min="0"></label>
         <label>实付金额 元<input type="number" id="f-amount-paid" step="0.01" min="0"></label>
         <label>加油站<input type="text" id="f-station" maxlength="100" placeholder="可空"></label>
-      </div>
-      <div class="form-grid" id="expense-fields" hidden>
-        <label>费用类型<select id="f-category"></select></label>
-        <label>金额 元<input type="number" id="f-amount" step="0.01" min="0" required></label>
       </div>
       <div class="checks" id="fuel-checks">
         <label><input type="checkbox" id="f-full" checked> 加满</label>
