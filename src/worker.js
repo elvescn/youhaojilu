@@ -3,7 +3,7 @@
 
 import { json, err, safeEqual, nowISO, normDatetime, num, str, bool01, toCSV, disposition } from "./util.js";
 import * as db from "./db.js";
-import { sendMail } from "./email.js";
+import { sendMail, smtpProbe } from "./email.js";
 
 const FUEL_GRADES = ["92#", "95#", "98#", "0#", "电"];
 const EXPENSE_CATEGORIES = ["裸车和税费", "保险和交通规费", "维修保养", "配件费", "交通罚款", "其它"];
@@ -196,6 +196,26 @@ export default {
         const body = await request.json().catch(() => ({}));
         if (!safeEqual(String(body.token || ""), env.API_TOKEN || "")) return err("口令不正确", 401);
         return json({ ok: true });
+      }
+
+      // 临时 SMTP 诊断（?t=登录口令）：探测 163/qq/gmail 465/587 是否拒绝 Cloudflare 出口。
+      // 结果同时写入 email_log（kind=diag），便于远程核对。诊断完成后可删除本段。
+      if (path === "/api/_smtpdiag") {
+        const t = url.searchParams.get("t") || "";
+        if (!safeEqual(t, env.API_TOKEN || "")) return err("未授权", 401);
+        const targets = [
+          ["smtp.163.com", 465, true],
+          ["smtp.163.com", 587, false],
+          ["smtp.qq.com", 465, true],
+          ["smtp.gmail.com", 465, true],
+        ];
+        const results = [];
+        for (const [h, p, s] of targets) results.push(await smtpProbe(h, p, s));
+        const brief = results.map(r => `${r.host}:${r.port} ${r.ok ? "OK" : "FAIL<" + r.steps[r.steps.length - 1].stage + " " + r.steps[r.steps.length - 1].info + ">"}`).join(" | ");
+        try {
+          await db.logEmail(env.DB, { kind: "diag", subject: "SMTP 探测", ok: results.some(r => r.ok), error: brief.slice(0, 500) });
+        } catch {}
+        return json({ ok: true, probed_at: nowISO(), brief, results });
       }
 
       // 统一 Bearer 鉴权
