@@ -205,6 +205,8 @@
       const rows = filterRange(st.monthly.fuel || []);
       drawConsumptionChart(rows, -1);
       drawCostChart(rows, -1);
+      chartCons.resetTip && chartCons.resetTip();
+      chartCost.resetTip && chartCost.resetTip();
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
@@ -215,6 +217,8 @@
     const rows = filterRange(state.monthly.fuel || []);
     drawConsumptionChart(rows, -1);
     drawCostChart(rows, -1);
+    chartCons.resetTip && chartCons.resetTip();
+    chartCost.resetTip && chartCost.resetTip();
   });
 
   function setupCanvas(canvas, cssH) {
@@ -294,7 +298,9 @@
   function drawCostChart(rows, hoverIdx = -1) {
     const canvas = $("chart-cost");
     const { ctx, w, h } = setupCanvas(canvas, 180);
-    const data = rows.map((r) => ({ month: r.month, fuel: r.paid || 0, count: r.count }));
+    // 幂等映射：悬浮重绘传入的是已映射过的 chartCost.rows（含 fuel 字段），
+    // 首次绘制传入的是后端原始行（含 paid 字段）。`r.fuel ?? r.paid` 兼容两者。
+    const data = rows.map((r) => ({ month: r.month, fuel: (r.fuel ?? r.paid) || 0, count: r.count || 0 }));
     chartCost.rows = data;
     if (!data.length) {
       chartCost.geom = null;
@@ -344,12 +350,19 @@
     }
   }
 
-  // 图表悬浮查看：鼠标划过 / 手机触摸，显示该月具体数据
+  // 图表悬浮查看：鼠标划过 / 点击 / 手机触摸。
+  // 数据保持：提示浮层与高亮在移开后不消失，保留到下次划过别处或切换时间范围/数据。
   function attachChartHover(canvasId, tipId, chart, drawFn, tipFn) {
     const canvas = $(canvasId);
     const tipEl = $(tipId);
     if (!canvas || !tipEl) return;
-    let cur = -1;
+    const state = { cur: -1 };
+    // 供数据重载/切换范围时复位
+    chart.resetTip = () => {
+      state.cur = -1;
+      tipEl.hidden = true;
+      drawFn(-1);
+    };
     const locate = (clientX) => {
       const g = chart.geom;
       if (!g || !g.n) return -1;
@@ -358,7 +371,7 @@
       return i >= 0 && i < g.n ? i : -1;
     };
     const show = (i, cx, cy) => {
-      if (i !== cur) { cur = i; drawFn(i); }
+      if (i !== state.cur) { state.cur = i; drawFn(i); }
       tipEl.innerHTML = tipFn(i);
       tipEl.hidden = false;
       const pr = tipEl.parentElement.getBoundingClientRect();
@@ -367,26 +380,26 @@
       tipEl.style.left = left + "px";
       tipEl.style.top = Math.max(4, cy - pr.top - 54) + "px";
     };
-    const hide = () => {
-      if (cur !== -1) { cur = -1; drawFn(-1); }
-      tipEl.hidden = true;
+    const move = (clientX, clientY) => {
+      const i = locate(clientX);
+      if (i >= 0) show(i, clientX, clientY);   // 划出绘图区：保持当前显示，不隐藏
     };
-    canvas.addEventListener("mousemove", (e) => {
+    canvas.addEventListener("mousemove", (e) => move(e.clientX, e.clientY));
+    // 点击即固定该月数据（移开后继续保持）
+    canvas.addEventListener("mousedown", (e) => {
       const i = locate(e.clientX);
-      i >= 0 ? show(i, e.clientX, e.clientY) : hide();
+      if (i >= 0) show(i, e.clientX, e.clientY);
     });
-    canvas.addEventListener("mouseleave", hide);
+    // 刻意不监听 mouseleave —— 数据保持
     const touch = (e) => {
       const t = e.touches[0];
       if (!t) return;
       const i = locate(t.clientX);
       if (i >= 0) { e.preventDefault(); show(i, t.clientX, t.clientY); }
-      else hide();
     };
     canvas.addEventListener("touchstart", touch, { passive: false });
     canvas.addEventListener("touchmove", touch, { passive: false });
-    canvas.addEventListener("touchend", hide);
-    canvas.addEventListener("touchcancel", hide);
+    // touchend 同样不隐藏 —— 手指松开后数据保持
   }
 
   attachChartHover("chart-consumption", "tip-consumption", chartCons,
