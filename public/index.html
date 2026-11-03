@@ -11,8 +11,8 @@
 </head>
 <body>
 
-<!-- 登录 -->
-<div id="login-view" class="login-wrap">
+<!-- 登录（浮层：数据公开浏览，仅增删改/备份需要登录） -->
+<div id="login-view" class="login-wrap" hidden>
   <div class="login-box">
     <div class="login-logo">
       <svg viewBox="0 0 24 24" width="44" height="44" fill="none" stroke="#185FA5" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
@@ -24,17 +24,19 @@
     <p class="muted">数据存在自己的 Cloudflare D1，每次记录自动备份到邮箱</p>
     <input id="login-token" type="password" placeholder="请输入访问口令" autocomplete="current-password">
     <button id="login-btn" class="btn primary full">登 录</button>
+    <button id="login-cancel" class="btn ghost full" style="margin-top:8px">暂不登录，随便看看</button>
     <p id="login-msg" class="error"></p>
   </div>
 </div>
 
-<!-- 主界面 -->
-<div id="app-view" hidden>
+<!-- 主界面（公开可见；登录后解锁增删改与备份） -->
+<div id="app-view">
   <header class="topbar">
     <div class="topbar-title">油耗账本</div>
     <div class="topbar-actions">
-      <button id="btn-backup" class="btn ghost" title="立即发送全量备份邮件">备份</button>
-      <button id="btn-logout" class="btn ghost" title="退出登录">退出</button>
+      <button id="btn-login" class="btn ghost">登录</button>
+      <button id="btn-backup" class="btn ghost" title="立即发送全量备份邮件" hidden>备份</button>
+      <button id="btn-logout" class="btn ghost" title="退出登录" hidden>退出</button>
     </div>
   </header>
 
@@ -48,13 +50,23 @@
     <!-- 仪表盘 -->
     <section id="tab-dash" class="tabpane active">
       <div class="cards" id="dash-cards"></div>
+      <div class="range-bar">
+        <span class="range-label">时间范围</span>
+        <select id="dash-range">
+          <option value="1y" selected>近 1 年</option>
+          <option value="3y">近 3 年</option>
+          <option value="all">全部</option>
+        </select>
+      </div>
       <div class="panel">
         <h3>月度油耗（L/100km）</h3>
         <canvas id="chart-consumption" height="180"></canvas>
+        <div id="tip-consumption" class="chart-tip" hidden></div>
       </div>
       <div class="panel">
         <h3>月度油费（元）</h3>
         <canvas id="chart-cost" height="180"></canvas>
+        <div id="tip-cost" class="chart-tip" hidden></div>
       </div>
     </section>
 
