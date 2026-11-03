@@ -187,18 +187,37 @@ export async function summary(db, vehicleId = 1) {
 }
 
 export async function monthlyStats(db, vehicleId = 1) {
+  // 月度油耗口径：当月累计加油量 ÷（当月最后一条里程 − 上月最后一条里程）× 100。
+  // 不能用「当月 MAX(odometer) − MIN(odometer)」：一个月只有一条记录时该值为 0，
+  // 两条里程接近的记录时会得到几千 L/100km 的荒谬值，图表被尖峰压扁。
+  // 首月没有上月终点，用首月第一条记录的里程作起点（差值即首月行驶里程）。
   const { results } = await db.prepare(
-    `SELECT substr(filled_at,1,7) AS month,
-            ROUND(SUM(liters),2) AS liters,
-            ROUND(SUM(amount_paid),2) AS paid,
-            COUNT(*) AS n,
-            MAX(odometer) - MIN(odometer) AS km
-     FROM fuel_records WHERE vehicle_id = ? GROUP BY month ORDER BY month`
+    `SELECT substr(filled_at,1,7) AS month, filled_at, odometer, liters, amount_paid
+     FROM fuel_records WHERE vehicle_id = ? ORDER BY filled_at, id`
   ).bind(vehicleId).all();
-  const fuel = (results || []).map(r => ({
-    month: r.month, liters: r.liters, paid: r.paid, count: r.n,
-    consumption: r.km > 0 ? Math.round(r.liters * 100 / r.km * 100) / 100 : null,
-  }));
+  const rows = results || [];
+  const byMonth = new Map();
+  for (const r of rows) {
+    let m = byMonth.get(r.month);
+    if (!m) { m = { month: r.month, liters: 0, paid: 0, count: 0, odoEnd: 0 }; byMonth.set(r.month, m); }
+    m.liters += r.liters || 0;
+    m.paid += r.amount_paid || 0;
+    m.count += 1;
+    if (r.odometer !== null && r.odometer !== undefined) m.odoEnd = r.odometer;
+  }
+  const fuel = [];
+  let prevEnd = null;
+  for (const m of byMonth.values()) {
+    m.liters = Math.round(m.liters * 100) / 100;
+    m.paid = Math.round(m.paid * 100) / 100;
+    const odoStart = prevEnd !== null ? prevEnd : null;
+    const km = odoStart !== null ? m.odoEnd - odoStart : 0;
+    fuel.push({
+      month: m.month, liters: m.liters, paid: m.paid, count: m.count,
+      consumption: km > 0 ? Math.round(m.liters * 100 / km * 100) / 100 : null,
+    });
+    prevEnd = m.odoEnd;
+  }
   const { results: er } = await db.prepare(
     `SELECT substr(occurred_at,1,7) AS month, category, ROUND(SUM(amount),2) AS amount
      FROM expense_records WHERE vehicle_id = ? GROUP BY month, category ORDER BY month`
