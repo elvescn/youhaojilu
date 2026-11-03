@@ -57,7 +57,10 @@
       body: opts.body ? JSON.stringify(opts.body) : undefined,
     });
     if (res.status === 401) {
-      showLogin("会话已过期，请重新登录");
+      token = "";
+      localStorage.removeItem(TOKEN_KEY);
+      updateChrome();
+      openLogin("会话已过期，请重新登录");
       throw new Error("unauthorized");
     }
     let data = {};
@@ -66,17 +69,34 @@
     return data;
   }
 
-  // ---------- 登录 / 主界面切换 ----------
+  // ---------- 登录 / 公开浏览 ----------
 
-  function showLogin(msg) {
-    $("app-view").hidden = true;
-    $("login-view").hidden = false;
+  // 数据默认公开浏览；登录后才显示 备份/退出/＋记一笔/数据Tab，并解锁增删改
+  function updateChrome() {
+    const on = !!token;
+    $("btn-login").hidden = on;
+    $("btn-backup").hidden = !on;
+    $("btn-logout").hidden = !on;
+    $("fab-add").hidden = !on;
+    $("fuel-add").hidden = !on;
+    const dataTab = document.querySelector('[data-tab="data"]');
+    if (dataTab) dataTab.hidden = !on;
+  }
+
+  function openLogin(msg) {
     if (msg) $("login-msg").textContent = msg;
+    $("login-view").hidden = false;
+    setTimeout(() => $("login-token").focus(), 50);
+  }
+
+  function closeLogin() {
+    $("login-view").hidden = true;
+    $("login-msg").textContent = "";
   }
 
   function showApp() {
-    $("login-view").hidden = true;
-    $("app-view").hidden = false;
+    closeLogin();
+    updateChrome();
     boot();
   }
 
@@ -100,18 +120,22 @@
     }
   });
   $("login-token").addEventListener("keydown", (e) => { if (e.key === "Enter") $("login-btn").click(); });
+  $("btn-login").addEventListener("click", () => openLogin());
+  $("login-cancel").addEventListener("click", closeLogin);
 
   $("btn-logout").addEventListener("click", () => {
     localStorage.removeItem(TOKEN_KEY);
     token = "";
     $("login-token").value = "";
-    showLogin();
+    updateChrome();
+    boot();
   });
 
   // ---------- Tab 切换 ----------
 
   document.querySelectorAll(".tab").forEach((btn) => {
     btn.addEventListener("click", () => {
+      if (btn.dataset.tab === "data" && !token) { openLogin("请先登录后访问数据"); return; }
       document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b === btn));
       document.querySelectorAll(".tabpane").forEach((p) => p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
       if (btn.dataset.tab === "dash") loadDash();
@@ -148,6 +172,22 @@
 
   // ---------- 仪表盘 ----------
 
+  // 图表数据缓存（供悬浮查看用）
+  const chartCons = { rows: [], geom: null };
+  const chartCost = { rows: [], geom: null };
+
+  // 时间范围过滤：近1年/近3年/全部（以当前日期倒推）
+  function filterRange(rows) {
+    const mode = $("dash-range").value;
+    if (mode === "all" || !rows.length) return rows;
+    const months = mode === "1y" ? 12 : 36;
+    const now = new Date();
+    let y = now.getFullYear(), m = now.getMonth() + 1 - (months - 1);
+    while (m <= 0) { m += 12; y--; }
+    const cutoff = y + "-" + String(m).padStart(2, "0");
+    return rows.filter((r) => r.month >= cutoff);
+  }
+
   async function loadDash() {
     try {
       const [st] = await Promise.all([api("/api/stats")]);
@@ -162,12 +202,20 @@
         `<div class="card"><div class="k">${esc(k)}</div><div class="v">${esc(v)} <small>${esc(sub)}</small></div></div>`
       ).join("");
       state.monthly = st.monthly;
-      drawConsumptionChart(st.monthly.fuel || []);
-      drawCostChart(st.monthly.fuel || []);
+      const rows = filterRange(st.monthly.fuel || []);
+      drawConsumptionChart(rows, -1);
+      drawCostChart(rows, -1);
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
   }
+
+  $("dash-range").addEventListener("change", () => {
+    if (!state.monthly) return;
+    const rows = filterRange(state.monthly.fuel || []);
+    drawConsumptionChart(rows, -1);
+    drawCostChart(rows, -1);
+  });
 
   function setupCanvas(canvas, cssH) {
     const dpr = window.devicePixelRatio || 1;
@@ -181,11 +229,13 @@
     return { ctx, w: cssW, h: cssH };
   }
 
-  function drawConsumptionChart(rows) {
+  function drawConsumptionChart(rows, hoverIdx = -1) {
     const canvas = $("chart-consumption");
     const { ctx, w, h } = setupCanvas(canvas, 180);
     const pts = rows.filter((r) => r.consumption !== null && r.consumption !== undefined);
+    chartCons.rows = pts;
     if (!pts.length) {
+      chartCons.geom = null;
       ctx.fillStyle = "#5b6472";
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
@@ -196,6 +246,7 @@
     const iw = w - padL - padR, ih = h - padT - padB;
     const maxV = Math.max(...pts.map((p) => p.consumption)) * 1.15;
     const minV = 0;
+    chartCons.geom = { padL, iw, n: pts.length };
     ctx.strokeStyle = "#d8dde5";
     ctx.fillStyle = "#5b6472";
     ctx.font = "11px sans-serif";
@@ -208,6 +259,13 @@
     }
     const X = (i) => padL + (iw * i) / Math.max(pts.length - 1, 1);
     const Y = (v) => padT + ih - ((v - minV) / (maxV - minV)) * ih;
+    // 悬浮高亮：竖虚线 + 放大点
+    if (hoverIdx >= 0 && hoverIdx < pts.length) {
+      ctx.strokeStyle = "rgba(24, 95, 165, .35)";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(X(hoverIdx), padT); ctx.lineTo(X(hoverIdx), padT + ih); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     // 折线
     ctx.strokeStyle = "#185FA5";
     ctx.lineWidth = 2;
@@ -217,35 +275,39 @@
     // 数据点与标签（月份过多时抽稀，避免挤成糊）
     const step = Math.ceil(pts.length / 12);
     pts.forEach((p, i) => {
-      ctx.fillStyle = "#185FA5";
-      ctx.beginPath(); ctx.arc(X(i), Y(p.consumption), 3, 0, Math.PI * 2); ctx.fill();
-      if (pts.length <= 13 || i % step === 0 || i === pts.length - 1) {
+      const hot = i === hoverIdx;
+      ctx.fillStyle = hot ? "#0C447C" : "#185FA5";
+      ctx.beginPath(); ctx.arc(X(i), Y(p.consumption), hot ? 5 : 3, 0, Math.PI * 2); ctx.fill();
+      if (hot || pts.length <= 13 || i % step === 0 || i === pts.length - 1) {
         ctx.fillStyle = "#5b6472";
         ctx.textAlign = "center";
         ctx.fillText(p.month.slice(2), X(i), h - 8);
       }
     });
-    // 末点数值
-    const last = pts[pts.length - 1];
+    // 末点数值（悬浮时显示悬浮点的数值）
+    const show = hoverIdx >= 0 && hoverIdx < pts.length ? pts[hoverIdx] : pts[pts.length - 1];
     ctx.fillStyle = "#0C447C";
     ctx.textAlign = "right";
-    ctx.fillText(last.consumption.toFixed(2) + " L/100km", w - padR, padT + 4);
+    ctx.fillText(show.consumption.toFixed(2) + " L/100km", w - padR, padT + 4);
   }
 
-  function drawCostChart(fuelRows) {
+  function drawCostChart(rows, hoverIdx = -1) {
     const canvas = $("chart-cost");
     const { ctx, w, h } = setupCanvas(canvas, 180);
-    if (!fuelRows.length) {
+    const data = rows.map((r) => ({ month: r.month, fuel: r.paid || 0, count: r.count }));
+    chartCost.rows = data;
+    if (!data.length) {
+      chartCost.geom = null;
       ctx.fillStyle = "#5b6472";
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("暂无数据", w / 2, h / 2);
       return;
     }
-    const data = fuelRows.map((r) => ({ month: r.month, fuel: r.paid || 0 }));
     const padL = 44, padR = 12, padT = 14, padB = 26;
     const iw = w - padL - padR, ih = h - padT - padB;
     const maxV = Math.max(...data.map((d) => d.fuel)) * 1.15 || 1;
+    chartCost.geom = { padL, iw, n: data.length };
     ctx.strokeStyle = "#d8dde5";
     ctx.fillStyle = "#5b6472";
     ctx.font = "11px sans-serif";
@@ -269,7 +331,78 @@
         ctx.fillText(d.month.slice(2), cx, h - 8);
       }
     });
+    // 悬浮高亮：竖虚线 + 柱顶重描
+    if (hoverIdx >= 0 && hoverIdx < data.length) {
+      const cx = padL + slot * hoverIdx + slot / 2;
+      ctx.strokeStyle = "rgba(24, 95, 165, .35)";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(cx, padT); ctx.lineTo(cx, padT + ih); ctx.stroke();
+      ctx.setLineDash([]);
+      const hF = (data[hoverIdx].fuel / maxV) * ih;
+      ctx.fillStyle = "#0C447C";
+      ctx.fillRect(cx - bw / 2, padT + ih - hF, bw, hF);
+    }
   }
+
+  // 图表悬浮查看：鼠标划过 / 手机触摸，显示该月具体数据
+  function attachChartHover(canvasId, tipId, chart, drawFn, tipFn) {
+    const canvas = $(canvasId);
+    const tipEl = $(tipId);
+    if (!canvas || !tipEl) return;
+    let cur = -1;
+    const locate = (clientX) => {
+      const g = chart.geom;
+      if (!g || !g.n) return -1;
+      const rect = canvas.getBoundingClientRect();
+      const i = Math.round(((clientX - rect.left - g.padL) / g.iw) * (g.n - 1));
+      return i >= 0 && i < g.n ? i : -1;
+    };
+    const show = (i, cx, cy) => {
+      if (i !== cur) { cur = i; drawFn(i); }
+      tipEl.innerHTML = tipFn(i);
+      tipEl.hidden = false;
+      const pr = tipEl.parentElement.getBoundingClientRect();
+      let left = cx - pr.left + 14;
+      if (left + 180 > pr.width) left = Math.max(4, cx - pr.left - 194);
+      tipEl.style.left = left + "px";
+      tipEl.style.top = Math.max(4, cy - pr.top - 54) + "px";
+    };
+    const hide = () => {
+      if (cur !== -1) { cur = -1; drawFn(-1); }
+      tipEl.hidden = true;
+    };
+    canvas.addEventListener("mousemove", (e) => {
+      const i = locate(e.clientX);
+      i >= 0 ? show(i, e.clientX, e.clientY) : hide();
+    });
+    canvas.addEventListener("mouseleave", hide);
+    const touch = (e) => {
+      const t = e.touches[0];
+      if (!t) return;
+      const i = locate(t.clientX);
+      if (i >= 0) { e.preventDefault(); show(i, t.clientX, t.clientY); }
+      else hide();
+    };
+    canvas.addEventListener("touchstart", touch, { passive: false });
+    canvas.addEventListener("touchmove", touch, { passive: false });
+    canvas.addEventListener("touchend", hide);
+    canvas.addEventListener("touchcancel", hide);
+  }
+
+  attachChartHover("chart-consumption", "tip-consumption", chartCons,
+    (i) => drawConsumptionChart(chartCons.rows, i),
+    (i) => {
+      const r = chartCons.rows[i];
+      if (!r) return "";
+      return `<b>${r.month}</b><br>油耗：${r.consumption === null ? "—" : r.consumption + " L/100km"}<br>加油：${r.liters} L · ${r.count} 次`;
+    });
+  attachChartHover("chart-cost", "tip-cost", chartCost,
+    (i) => drawCostChart(chartCost.rows, i),
+    (i) => {
+      const r = chartCost.rows[i];
+      if (!r) return "";
+      return `<b>${r.month}</b><br>油费：${r.fuel} 元<br>加油：${r.count} 次`;
+    });
 
   // ---------- 加油记录 ----------
 
@@ -285,10 +418,17 @@
       $("fuel-pageinfo").textContent = `第 ${data.page} / ${data.pages} 页 · 共 ${data.total} 条`;
       const tbody = document.querySelector("#fuel-table tbody");
       if (!data.rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无记录，点右下角「＋」开始</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="9" class="empty">暂无记录${token ? "，点右下角「＋」开始" : ""}</td></tr>`;
         return;
       }
-      tbody.innerHTML = data.rows.map((r) => `
+      tbody.innerHTML = data.rows.map((r) => {
+        const actions = token
+          ? `<td class="row-actions">
+              <button data-edit="${r.id}">改</button>
+              <button class="del" data-del="${r.id}">删</button>
+            </td>`
+          : "<td></td>";
+        return `
         <tr>
           <td>${esc(r.filled_at.slice(0, 10))}<br><span class="muted">${esc(r.filled_at.slice(11, 16))}</span></td>
           <td class="num">${fmtInt(r.odometer)}</td>
@@ -298,11 +438,9 @@
           <td class="num">${r.consumption === null ? "—" : esc(r.consumption)}${r.is_missed ? ' <span class="muted" title="漏记段">*</span>' : ""}${r.is_full ? "" : ' <span class="muted" title="未加满">◇</span>'}</td>
           <td>${esc(r.fuel_grade)}</td>
           <td class="wrap">${esc(r.station)}${r.note ? "<br><span class=muted>" + esc(r.note) + "</span>" : ""}</td>
-          <td class="row-actions">
-            <button data-edit="${r.id}">改</button>
-            <button class="del" data-del="${r.id}">删</button>
-          </td>
-        </tr>`).join("");
+          ${actions}
+        </tr>`;
+      }).join("");
       tbody.querySelectorAll("[data-edit]").forEach((b) =>
         b.addEventListener("click", () => openFuelModal(data.rows.find((r) => String(r.id) === b.dataset.edit))));
       tbody.querySelectorAll("[data-del]").forEach((b) =>
@@ -326,6 +464,7 @@
   // ---------- 弹窗表单 ----------
 
   function openFuelModal(record) {
+    if (!token) { openLogin("请先登录后再记录"); return; }
     $("form-msg").textContent = "";
     $("f-id").value = record ? record.id : "";
     $("f-datetime").value = record ? record.filled_at.slice(0, 16) : nowLocalInput();
@@ -461,5 +600,7 @@
 
   // ---------- 入口 ----------
 
-  if (token) showApp(); else showLogin();
+  // 公开浏览：无论是否登录都直接进主界面；登录态只影响增删改/备份按钮
+  updateChrome();
+  boot();
 })();
