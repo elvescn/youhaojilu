@@ -6,9 +6,7 @@
 
   const state = {
     grades: ["92#", "95#", "98#", "0#", "电"],
-    categories: ["裸车和税费", "保险和交通规费", "维修保养", "配件费", "交通罚款", "其它"],
     fuelPage: 1, fuelPages: 1,
-    expPage: 1, expPages: 1,
     monthly: null,
   };
 
@@ -118,7 +116,6 @@
       document.querySelectorAll(".tabpane").forEach((p) => p.classList.toggle("active", p.id === "tab-" + btn.dataset.tab));
       if (btn.dataset.tab === "dash") loadDash();
       if (btn.dataset.tab === "fuel") loadFuel();
-      if (btn.dataset.tab === "expense") loadExpense();
       if (btn.dataset.tab === "data") loadMailLog();
     });
   });
@@ -129,26 +126,19 @@
     try {
       const data = await api("/api/bootstrap");
       state.grades = data.grades || state.grades;
-      state.categories = data.categories || state.categories;
       // 填充筛选项
       const gradeSel = $("fuel-grade");
       gradeSel.innerHTML = '<option value="">全部油号</option>' + state.grades.map((g) => `<option>${esc(g)}</option>`).join("");
-      const catSel = $("exp-category");
-      catSel.innerHTML = '<option value="">全部类型</option>' + state.categories.map((c) => `<option>${esc(c)}</option>`).join("");
       const fGrade = $("f-grade");
       fGrade.innerHTML = state.grades.map((g) => `<option>${esc(g)}</option>`).join("");
-      const fCat = $("f-category");
-      fCat.innerHTML = state.categories.map((c) => `<option>${esc(c)}</option>`).join("");
       // 年份筛选
       const years = new Set();
       const st = await api("/api/stats");
       (st.monthly.fuel || []).forEach((r) => years.add(r.month.slice(0, 4)));
-      (st.monthly.expenseByMonth && Object.keys(st.monthly.expenseByMonth)).forEach((m) => years.add(m.slice(0, 4)));
       const yearOpts = ['<option value="">全部年份</option>'].concat(
         [...years].sort().reverse().map((y) => `<option>${y}</option>`)
       ).join("");
       $("fuel-year").innerHTML = yearOpts;
-      $("exp-year").innerHTML = yearOpts;
       loadDash();
       loadFuel();
     } catch (e) {
@@ -164,9 +154,8 @@
       const s = st.summary;
       const cards = [
         ["平均油耗", s.avg_consumption === null ? "—" : fmt(s.avg_consumption), "L/100km · 可计算段加权"],
-        ["加油", `${s.fuel_count} 次`, `${fmt(s.liters_total)} L · ${fmtInt(s.fuel_paid_total)} 元`],
-        ["其他费用", `${s.expense_count} 笔`, `${fmtInt(s.expense_total)} 元`],
-        ["花费合计", fmtInt(s.total_cost), "元"],
+        ["加油", `${s.fuel_count} 次`, `${fmt(s.liters_total)} L`],
+        ["油费合计", fmtInt(s.fuel_paid_total), "元"],
         ["行驶里程", fmtInt(s.km_covered), `km（${fmtInt(s.min_odo)} ~ ${fmtInt(s.max_odo)}）`],
       ];
       $("dash-cards").innerHTML = cards.map(([k, v, sub]) =>
@@ -174,7 +163,7 @@
       ).join("");
       state.monthly = st.monthly;
       drawConsumptionChart(st.monthly.fuel || []);
-      drawCostChart(st.monthly.fuel || [], st.monthly.expenseByMonth || {});
+      drawCostChart(st.monthly.fuel || []);
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
@@ -225,13 +214,16 @@
     ctx.beginPath();
     pts.forEach((p, i) => { i ? ctx.lineTo(X(i), Y(p.consumption)) : ctx.moveTo(X(i), Y(p.consumption)); });
     ctx.stroke();
-    // 数据点与标签
+    // 数据点与标签（月份过多时抽稀，避免挤成糊）
+    const step = Math.ceil(pts.length / 12);
     pts.forEach((p, i) => {
       ctx.fillStyle = "#185FA5";
       ctx.beginPath(); ctx.arc(X(i), Y(p.consumption), 3, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "#5b6472";
-      ctx.textAlign = "center";
-      ctx.fillText(p.month.slice(2), X(i), h - 8);
+      if (pts.length <= 13 || i % step === 0 || i === pts.length - 1) {
+        ctx.fillStyle = "#5b6472";
+        ctx.textAlign = "center";
+        ctx.fillText(p.month.slice(2), X(i), h - 8);
+      }
     });
     // 末点数值
     const last = pts[pts.length - 1];
@@ -240,25 +232,20 @@
     ctx.fillText(last.consumption.toFixed(2) + " L/100km", w - padR, padT + 4);
   }
 
-  function drawCostChart(fuelRows, expByMonth) {
+  function drawCostChart(fuelRows) {
     const canvas = $("chart-cost");
     const { ctx, w, h } = setupCanvas(canvas, 180);
-    const months = fuelRows.map((r) => r.month);
-    if (!months.length) {
+    if (!fuelRows.length) {
       ctx.fillStyle = "#5b6472";
       ctx.font = "13px sans-serif";
       ctx.textAlign = "center";
       ctx.fillText("暂无数据", w / 2, h / 2);
       return;
     }
-    const expOf = (m) => Object.values(expByMonth[m] || {}).reduce((a, b) => a + b, 0);
-    const data = months.map((m) => {
-      const f = fuelRows.find((r) => r.month === m);
-      return { month: m, fuel: f ? f.paid : 0, exp: expOf(m) };
-    });
+    const data = fuelRows.map((r) => ({ month: r.month, fuel: r.paid || 0 }));
     const padL = 44, padR = 12, padT = 14, padB = 26;
     const iw = w - padL - padR, ih = h - padT - padB;
-    const maxV = Math.max(...data.map((d) => d.fuel + d.exp)) * 1.15 || 1;
+    const maxV = Math.max(...data.map((d) => d.fuel)) * 1.15 || 1;
     ctx.strokeStyle = "#d8dde5";
     ctx.fillStyle = "#5b6472";
     ctx.font = "11px sans-serif";
@@ -269,28 +256,19 @@
       ctx.fillText(Math.round((maxV * i) / 4).toString(), padL - 6, y + 4);
     }
     const slot = iw / data.length;
-    const bw = Math.max(Math.min(slot * 0.32, 26), 4);
+    const bw = Math.max(Math.min(slot * 0.5, 26), 4);
+    const step = Math.ceil(data.length / 12);
     data.forEach((d, i) => {
       const cx = padL + slot * i + slot / 2;
       const hFuel = (d.fuel / maxV) * ih;
-      const hExp = (d.exp / maxV) * ih;
       ctx.fillStyle = "#185FA5";
-      ctx.fillRect(cx - bw - 2, padT + ih - hFuel, bw, hFuel);
-      ctx.fillStyle = "#EF9F27";
-      ctx.fillRect(cx + 2, padT + ih - hExp, bw, hExp);
-      if (data.length <= 24 || i % Math.ceil(data.length / 12) === 0) {
+      ctx.fillRect(cx - bw / 2, padT + ih - hFuel, bw, hFuel);
+      if (data.length <= 13 || i % step === 0 || i === data.length - 1) {
         ctx.fillStyle = "#5b6472";
         ctx.textAlign = "center";
         ctx.fillText(d.month.slice(2), cx, h - 8);
       }
     });
-    // 图例
-    ctx.font = "11px sans-serif";
-    ctx.textAlign = "left";
-    ctx.fillStyle = "#185FA5"; ctx.fillRect(padL, 2, 10, 10);
-    ctx.fillStyle = "#5b6472"; ctx.fillText("油费", padL + 14, 11);
-    ctx.fillStyle = "#EF9F27"; ctx.fillRect(padL + 52, 2, 10, 10);
-    ctx.fillStyle = "#5b6472"; ctx.fillText("其他费用", padL + 66, 11);
   }
 
   // ---------- 加油记录 ----------
@@ -307,7 +285,7 @@
       $("fuel-pageinfo").textContent = `第 ${data.page} / ${data.pages} 页 · 共 ${data.total} 条`;
       const tbody = document.querySelector("#fuel-table tbody");
       if (!data.rows.length) {
-        tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无记录，点右上角「记一笔」开始</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="9" class="empty">暂无记录，点右下角「＋」开始</td></tr>';
         return;
       }
       tbody.innerHTML = data.rows.map((r) => `
@@ -328,7 +306,7 @@
       tbody.querySelectorAll("[data-edit]").forEach((b) =>
         b.addEventListener("click", () => openFuelModal(data.rows.find((r) => String(r.id) === b.dataset.edit))));
       tbody.querySelectorAll("[data-del]").forEach((b) =>
-        b.addEventListener("click", () => delRecord("fuel", b.dataset.del)));
+        b.addEventListener("click", () => delRecord(b.dataset.del)));
     } catch (e) {
       if (e.message !== "unauthorized") toast(e.message);
     }
@@ -343,142 +321,83 @@
     qTimer = setTimeout(() => { state.fuelPage = 1; loadFuel(); }, 350);
   });
   $("fuel-add").addEventListener("click", () => openFuelModal(null));
-
-  // ---------- 费用记录 ----------
-
-  async function loadExpense() {
-    const params = new URLSearchParams({
-      page: state.expPage, size: 50,
-      year: $("exp-year").value, category: $("exp-category").value,
-    });
-    try {
-      const data = await api("/api/expense?" + params);
-      state.expPages = data.pages;
-      state.expPage = data.page;
-      $("exp-pageinfo").textContent = `第 ${data.page} / ${data.pages} 页 · 共 ${data.total} 条`;
-      const tbody = document.querySelector("#exp-table tbody");
-      if (!data.rows.length) {
-        tbody.innerHTML = '<tr><td colspan="5" class="empty">暂无费用记录</td></tr>';
-        return;
-      }
-      tbody.innerHTML = data.rows.map((r) => `
-        <tr>
-          <td>${esc(r.occurred_at.slice(0, 10))}</td>
-          <td>${esc(r.category)}</td>
-          <td class="num">${fmt(r.amount)}</td>
-          <td class="wrap">${esc(r.note)}</td>
-          <td class="row-actions">
-            <button data-edit="${r.id}">改</button>
-            <button class="del" data-del="${r.id}">删</button>
-          </td>
-        </tr>`).join("");
-      tbody.querySelectorAll("[data-edit]").forEach((b) =>
-        b.addEventListener("click", () => openExpenseModal(data.rows.find((r) => String(r.id) === b.dataset.edit))));
-      tbody.querySelectorAll("[data-del]").forEach((b) =>
-        b.addEventListener("click", () => delRecord("expense", b.dataset.del)));
-    } catch (e) {
-      if (e.message !== "unauthorized") toast(e.message);
-    }
-  }
-
-  $("exp-prev").addEventListener("click", () => { if (state.expPage > 1) { state.expPage--; loadExpense(); } });
-  $("exp-next").addEventListener("click", () => { if (state.expPage < state.expPages) { state.expPage++; loadExpense(); } });
-  ["exp-year", "exp-category"].forEach((id) => $(id).addEventListener("change", () => { state.expPage = 1; loadExpense(); }));
-  $("exp-add").addEventListener("click", () => openExpenseModal(null));
+  $("fab-add").addEventListener("click", () => openFuelModal(null));
 
   // ---------- 弹窗表单 ----------
 
-  function openModal(kind, record) {
+  function openFuelModal(record) {
     $("form-msg").textContent = "";
     $("f-id").value = record ? record.id : "";
-    $("f-kind").value = kind;
-    $("f-datetime").value = record
-      ? (kind === "fuel" ? record.filled_at : record.occurred_at).slice(0, 16)
-      : nowLocalInput();
-    $("fuel-fields").hidden = kind !== "fuel";
-    $("fuel-checks").style.display = kind === "fuel" ? "" : "none";
-    $("expense-fields").hidden = kind === "fuel";
-    $("modal-title").textContent = (record ? "修改" : "新增") + (kind === "fuel" ? "加油记录" : "费用记录");
-    if (kind === "fuel") {
-      $("f-odometer").value = record ? record.odometer : "";
-      $("f-price").value = record && record.unit_price !== null ? record.unit_price : "";
-      $("f-liters").value = record ? record.liters : "";
-      $("f-amount-display").value = record && record.amount_display !== null ? record.amount_display : "";
-      $("f-amount-paid").value = record && record.amount_paid !== null ? record.amount_paid : "";
-      $("f-grade").value = record ? record.fuel_grade : "92#";
-      $("f-station").value = record ? record.station || "" : "";
-      $("f-full").checked = record ? !!record.is_full : true;
-      $("f-light").checked = record ? !!record.is_low_light : false;
-      $("f-missed").checked = record ? !!record.is_missed : false;
-    } else {
-      $("f-category").value = record ? record.category : state.categories[0];
-      $("f-amount").value = record ? record.amount : "";
-    }
+    $("f-datetime").value = record ? record.filled_at.slice(0, 16) : nowLocalInput();
+    $("modal-title").textContent = (record ? "修改" : "新增") + "加油记录";
+    $("f-odometer").value = record ? record.odometer : "";
+    $("f-price").value = record && record.unit_price !== null ? record.unit_price : "";
+    $("f-liters").value = record ? record.liters : "";
+    $("f-amount-display").value = record && record.amount_display !== null ? record.amount_display : "";
+    $("f-amount-paid").value = record && record.amount_paid !== null ? record.amount_paid : "";
+    $("f-grade").value = record ? record.fuel_grade : "92#";
+    $("f-station").value = record ? record.station || "" : "";
+    $("f-full").checked = record ? !!record.is_full : true;
+    $("f-light").checked = record ? !!record.is_low_light : false;
+    $("f-missed").checked = record ? !!record.is_missed : false;
     $("f-note").value = record ? record.note || "" : "";
+    paidTouched = false;
     $("modal").hidden = false;
     setTimeout(() => $("f-datetime").focus(), 50);
   }
-
-  function openFuelModal(record) { openModal("fuel", record); }
-  function openExpenseModal(record) { openModal("expense", record); }
   $("modal-cancel").addEventListener("click", () => { $("modal").hidden = true; });
   $("modal").addEventListener("click", (e) => { if (e.target === $("modal")) $("modal").hidden = true; });
 
-  // 单价 × 油量 自动带出机显金额
+  // 单价 × 油量 自动带出机显金额，实付金额跟随机显金额
+  // 实付一旦被用户手动改过就不再自动覆盖（paidTouched）
+  let paidTouched = false;
+  $("f-amount-paid").addEventListener("input", () => { paidTouched = true; });
   function autoAmount() {
     const price = parseFloat($("f-price").value);
     const liters = parseFloat($("f-liters").value);
     if (isFinite(price) && isFinite(liters) && !$("f-id").value) {
       const v = Math.round(price * liters * 100) / 100;
       $("f-amount-display").value = v;
-      if (!$("f-amount-paid").value) $("f-amount-paid").value = v;
+      if (!paidTouched) $("f-amount-paid").value = v;
     }
   }
   ["f-price", "f-liters"].forEach((id) => $(id).addEventListener("input", autoAmount));
 
   $("record-form").addEventListener("submit", async (e) => {
     e.preventDefault();
-    const kind = $("f-kind").value;
     const id = $("f-id").value;
-    const body = { filled_at: $("f-datetime").value, occurred_at: $("f-datetime").value };
-    if (kind === "fuel") {
-      Object.assign(body, {
-        odometer: $("f-odometer").value,
-        unit_price: $("f-price").value,
-        liters: $("f-liters").value,
-        amount_display: $("f-amount-display").value,
-        amount_paid: $("f-amount-paid").value,
-        fuel_grade: $("f-grade").value,
-        is_full: $("f-full").checked,
-        is_low_light: $("f-light").checked,
-        is_missed: $("f-missed").checked,
-        station: $("f-station").value,
-        note: $("f-note").value,
-      });
-    } else {
-      Object.assign(body, {
-        category: $("f-category").value,
-        amount: $("f-amount").value,
-        note: $("f-note").value,
-      });
-    }
+    const body = {
+      filled_at: $("f-datetime").value,
+      odometer: $("f-odometer").value,
+      unit_price: $("f-price").value,
+      liters: $("f-liters").value,
+      amount_display: $("f-amount-display").value,
+      amount_paid: $("f-amount-paid").value,
+      fuel_grade: $("f-grade").value,
+      is_full: $("f-full").checked,
+      is_low_light: $("f-light").checked,
+      is_missed: $("f-missed").checked,
+      station: $("f-station").value,
+      note: $("f-note").value,
+    };
     try {
-      await api("/api/" + kind + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body });
+      await api("/api/fuel" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body });
       $("modal").hidden = true;
-      toast("已保存" + (body.email_skipped ? "" : "，备份邮件将稍后送达"));
-      if (kind === "fuel") { state.fuelPage = 1; loadFuel(); } else { state.expPage = 1; loadExpense(); }
+      toast("已保存，备份邮件将稍后送达");
+      state.fuelPage = 1;
+      loadFuel();
       loadDash();
     } catch (err) {
       $("form-msg").textContent = err.message;
     }
   });
 
-  async function delRecord(kind, id) {
+  async function delRecord(id) {
     if (!confirm("确定删除这条记录？删除后油耗会按加满链重算。")) return;
     try {
-      await api("/api/" + kind + "/" + id, { method: "DELETE" });
+      await api("/api/fuel/" + id, { method: "DELETE" });
       toast("已删除");
-      if (kind === "fuel") loadFuel(); else loadExpense();
+      loadFuel();
       loadDash();
     } catch (e) {
       toast(e.message);
