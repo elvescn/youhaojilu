@@ -6,6 +6,7 @@
 
   const state = {
     grades: ["92#", "95#", "98#", "0#", "电"],
+    stations: [],
     fuelPage: 1, fuelPages: 1,
     monthly: null,
   };
@@ -150,6 +151,8 @@
     try {
       const data = await api("/api/bootstrap");
       state.grades = data.grades || state.grades;
+      state.stations = data.stations || [];
+      renderStationList();
       // 填充筛选项
       const gradeSel = $("fuel-grade");
       gradeSel.innerHTML = '<option value="">全部油号</option>' + state.grades.map((g) => `<option>${esc(g)}</option>`).join("");
@@ -171,6 +174,18 @@
   }
 
   // ---------- 仪表盘 ----------
+
+  // 历史加油站下拉（datalist）：按使用频次排序，保存新站名后即时并入
+  function renderStationList() {
+    const dl = $("station-list");
+    if (dl) dl.innerHTML = (state.stations || []).map((s) => `<option value="${esc(s)}"></option>`).join("");
+  }
+  function rememberStation(name) {
+    const s = String(name || "").trim();
+    if (!s) return;
+    state.stations = [s].concat((state.stations || []).filter((x) => x !== s)).slice(0, 200);
+    renderStationList();
+  }
 
   // 图表数据缓存（供悬浮查看用）
   const chartCons = { rows: [], geom: null };
@@ -535,6 +550,7 @@
     try {
       await api("/api/fuel" + (id ? "/" + id : ""), { method: id ? "PUT" : "POST", body });
       $("modal").hidden = true;
+      rememberStation(body.station);
       toast("已保存，备份邮件将稍后送达");
       state.fuelPage = 1;
       loadFuel();
