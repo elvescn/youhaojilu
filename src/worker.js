@@ -214,8 +214,8 @@ export default {
 
       // 初始化数据
       if (path === "/api/bootstrap" && method === "GET") {
-        const [vehicles, summary] = await Promise.all([db.listVehicles(DB), db.summary(DB, 1)]);
-        return json({ ok: true, vehicles, summary, grades: FUEL_GRADES, categories: EXPENSE_CATEGORIES });
+        const [vehicles, summary, stations] = await Promise.all([db.listVehicles(DB), db.summary(DB, 1), db.listStations(DB)]);
+        return json({ ok: true, vehicles, summary, stations, grades: FUEL_GRADES, categories: EXPENSE_CATEGORIES });
       }
 
       // ---- 油耗记录 ----
