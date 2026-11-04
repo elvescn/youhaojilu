@@ -19,6 +19,16 @@ export async function getVehicle(db, id) {
   return db.prepare("SELECT * FROM vehicles WHERE id = ?").bind(id).first();
 }
 
+// 历史加油站名（去重，按使用次数降序，供填写时下拉选择）
+export async function listStations(db) {
+  const { results } = await db.prepare(
+    `SELECT station, COUNT(*) AS n FROM fuel_records
+     WHERE station IS NOT NULL AND station != ''
+     GROUP BY station ORDER BY n DESC, station LIMIT 200`
+  ).all();
+  return (results || []).map((r) => r.station);
+}
+
 // ---- 油耗记录 ----
 
 export async function listFuel(db, { vehicleId = 1, year = null, grade = null, q = null, page = 1, size = 200 } = {}) {
